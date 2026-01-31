@@ -1,203 +1,173 @@
-require('dotenv').config();
-const { 
-    Client, GatewayIntentBits, Partials, PermissionsBitField,
-    ActionRowBuilder, ButtonBuilder, ButtonStyle,
-    ModalBuilder, TextInputBuilder, TextInputStyle, InteractionType,
-    ChannelType
-} = require('discord.js');
+const { Client, GatewayIntentBits } = require('discord.js');
+const fs = require('fs');
 
-const client = new Client({ 
-    intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent],
-    partials: [Partials.Channel]
+// ────────────────────────────────────────────────
+// File to store data (vouches for now)
+const DATA_FILE = './image.json';
+let data = {};
+
+if (fs.existsSync(DATA_FILE)) {
+  try {
+    data = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
+  } catch (err) {
+    console.error('Error reading image.json, starting fresh:', err);
+    data = {};
+  }
+} else {
+  fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
+}
+
+function saveData() {
+  fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
+}
+
+// ────────────────────────────────────────────────
+const client = new Client({
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.GuildMembers,          // needed for roles
+    GatewayIntentBits.MessageContent
+  ]
 });
 
-// CONFIG
-const SPECIAL_USER_ID = '1467183698792284255';
-const LOG_CHANNEL_ID = '1467183089850515508';
-const TICKET_CATEGORY_ID = '1467180440396894239'; // Ticket category
-
-// In-memory ticket storage
-const tickets = new Map();
-
-// READY
-client.once('ready', () => console.log(`Logged in as ${client.user.tag}`));
-
-// ----------------- Text Command: $setup -----------------
-client.on('messageCreate', async message => {
-    if (!message.guild || message.author.bot) return;
-
-    const args = message.content.trim().split(/ +/);
-    const cmd = args.shift().toLowerCase();
-
-    if (cmd === '$setup') {
-        await message.channel.send({
-            content: "**Welcome to MM Service!**\nIf you are in need of an MM, please read our Middleman too first and then tap the “Request middleman” button and fill out the form below.\n• You will be required to vouch your middleman after the trade in the vouches channel. Failing to do so within 24 hours will result in a Blacklist from our MM Service.\n• Creating any form of troll tickets will also result in a middleman ban.\n❖ : We are NOT responsible for anything that happens after the trade is done. As well as any duped items. By opening a ticket or requesting a middleman you have agreed to our middleman too.",
-            components: [
-                new ActionRowBuilder().addComponents(
-                    new ButtonBuilder()
-                        .setCustomId('request_mm')
-                        .setLabel('Request Middleman')
-                        .setStyle(ButtonStyle.Primary)
-                )
-            ]
-        });
-        return message.reply("Ticket panel has been set up!");
-    }
+client.once('ready', () => {
+  console.log(`Logged in as ${client.user.tag} | In ${client.guilds.cache.size} servers`);
 });
 
-// ----------------- Ticket Modal -----------------
-client.on('interactionCreate', async interaction => {
-    if (interaction.isButton() && interaction.customId === 'request_mm') {
-        const modal = new ModalBuilder()
-            .setCustomId('ticketForm')
-            .setTitle('Request Middleman');
+// ────────────────────────────────────────────────
+client.on('messageCreate', async (message) => {
+  if (message.author.bot) return;
+  if (!message.content.startsWith('$')) return;
 
-        modal.addComponents(
-            new ActionRowBuilder().addComponents(
-                new TextInputBuilder()
-                    .setCustomId('otherUser')
-                    .setLabel("What's the other person’s ID/User?")
-                    .setStyle(TextInputStyle.Short)
-                    .setRequired(true)
-            ),
-            new ActionRowBuilder().addComponents(
-                new TextInputBuilder()
-                    .setCustomId('tradeAbout')
-                    .setLabel("What's the trade about?")
-                    .setStyle(TextInputStyle.Paragraph)
-                    .setRequired(true)
-            ),
-            new ActionRowBuilder().addComponents(
-                new TextInputBuilder()
-                    .setCustomId('canJoinServers')
-                    .setLabel("Can both join private servers?")
-                    .setStyle(TextInputStyle.Short)
-                    .setRequired(true)
-            )
-        );
+  const args = message.content.slice(1).trim().split(/ +/);
+  const command = args.shift()?.toLowerCase();
 
-        await interaction.showModal(modal);
+  // ────────────────────────────────────────────────
+  // $ping (test command)
+  if (command === 'ping') {
+    return message.reply('Pong! 🏓');
+  }
+
+  // ────────────────────────────────────────────────
+  // $mminfo
+  if (command === 'mminfo') {
+    const mmText = `
+• A middleman is a trusted go-between who holds payment until the seller delivers goods or services.
+• The funds are released once the buyer confirms everything is as agreed.
+• This process helps prevent scams, build trust, and resolve disputes.
+• Common in valuable games, real-life money trades, in-game currency, and collectibles.
+• Only works safely if the middleman is reputable and verified.
+    `.trim();
+
+    const imageUrl = 'https://cdn.discordapp.com/attachments/1466651539778175100/1467235981433503907/middleman1.webp?ex=697fa57d&is=697e53fd&hm=c6976730fb89e6ad39c6371c1a8b524f21cbd1e190a648325fc16985c1eb9a66&';
+
+    try {
+      await message.channel.send({
+        content: mmText,
+        files: [{
+          attachment: imageUrl,
+          name: 'middleman-diagram.webp'
+        }]
+      });
+      // Optional: await message.delete().catch(() => {});
+    } catch (err) {
+      console.error('Failed $mminfo:', err);
+      await message.reply('Could not send MM info — check perms or logs.');
+    }
+    return;
+  }
+
+  // ────────────────────────────────────────────────
+  // $mercy @user
+  if (command === 'mercy') {
+    const targetMember = message.mentions.members.first();
+
+    if (!targetMember) {
+      return message.reply('Mention someone! → `$mercy @user`');
     }
 
-    if (interaction.type === InteractionType.ModalSubmit && interaction.customId === 'ticketForm') {
-        const otherUser = interaction.fields.getTextInputValue('otherUser');
-        const tradeAbout = interaction.fields.getTextInputValue('tradeAbout');
-        const canJoinServers = interaction.fields.getTextInputValue('canJoinServers');
-
-        // Create ticket channel under category
-        const ticketChannel = await interaction.guild.channels.create({
-            name: `ticket-${interaction.user.username}`,
-            type: ChannelType.GuildText,
-            parent: TICKET_CATEGORY_ID,
-            permissionOverwrites: [
-                { id: interaction.guild.id, deny: [PermissionsBitField.Flags.ViewChannel] },
-                { id: interaction.user.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages] },
-                { id: SPECIAL_USER_ID, allow: [PermissionsBitField.Flags.ViewChannel] } // can see but cannot type
-            ]
-        });
-
-        tickets.set(ticketChannel.id, {
-            creator: interaction.user.id,
-            claimedBy: null,
-            allowedUsers: [interaction.user.id]
-        });
-
-        await ticketChannel.send({
-            content: `**Ticket Opened!**\nOther user: ${otherUser}\nTrade about: ${tradeAbout}\nCan both join private servers: ${canJoinServers}\n\nWelcome to MM Service!\nIf you are in need of an MM, please read our Middleman too first and then tap the “Request middleman” button and fill out the form below.\n• You will be required to vouch your middleman after the trade in the vouches channel. Failing to do so within 24 hours will result in a Blacklist from our MM Service.\n• Creating any form of troll tickets will also result in a middleman ban.\n❖ : We are NOT responsible for anything that happens after the trade is done. As well as any duped items. By opening a ticket or requesting a middleman you have agreed to our middleman too.`,
-            components: [
-                new ActionRowBuilder().addComponents(
-                    new ButtonBuilder().setCustomId('claim').setLabel('Claim').setStyle(ButtonStyle.Primary),
-                    new ButtonBuilder().setCustomId('unclaim').setLabel('Unclaim').setStyle(ButtonStyle.Secondary),
-                    new ButtonBuilder().setCustomId('close').setLabel('Close Ticket').setStyle(ButtonStyle.Danger)
-                )
-            ]
-        });
-
-        await interaction.reply({ content: `Ticket created: ${ticketChannel}`, ephemeral: true });
+    if (targetMember.id === message.author.id) {
+      return message.reply("Can't mercy yourself bro 😭");
     }
+    if (targetMember.user.bot) {
+      return message.reply("Bots don't need mercy, they're built different 🤖");
+    }
+
+    const roleId = '1467183595561943124';
+
+    try {
+      await targetMember.roles.add(roleId);
+
+      const learnLink = 'https://discord.com/channels/1467177582951661570/1467182217003532338';
+      const rulesLink = 'https://discord.com/channels/1467177582951661570/1467182178499563751';
+
+      const recruitMsg = `${targetMember} has been recruited! 🎉\n` +
+                         `Go learn shit here → ${learnLink}\n` +
+                         `And read the fuckass rules here → ${rulesLink}\n\n` +
+                         `made by love from schior 😎`;
+
+      await message.channel.send(recruitMsg);
+
+      // Optional cleanup
+      // await message.delete().catch(() => {});
+
+    } catch (error) {
+      console.error('Mercy failed:', error);
+      let msg = 'Failed to mercy — ';
+
+      if (error.code === 50013) msg += '(bot role too low or missing MANAGE_ROLES)';
+      else if (error.code === 10007) msg += '(user not in server)';
+      else if (error.code === 50001) msg += '(missing channel/role access)';
+
+      await message.reply(msg + ' Check Railway logs.');
+    }
+    return;
+  }
+
+  // ────────────────────────────────────────────────
+  // $vouch @user reason...
+  if (command === 'vouch') {
+    if (args.length < 2) {
+      return message.reply('Usage: `$vouch @user great trader`');
+    }
+
+    const target = message.mentions.users.first();
+    if (!target) return message.reply('Mention a valid user.');
+
+    const reason = args.slice(1).join(' ');
+
+    if (!data[target.id]) data[target.id] = [];
+    data[target.id].push({
+      from: message.author.id,
+      reason,
+      timestamp: new Date().toISOString()
+    });
+
+    saveData();
+
+    return message.reply(`Vouch added for ${target.tag}! ✅`);
+  }
+
+  // ────────────────────────────────────────────────
+  // $vouches [@user]
+  if (command === 'vouches') {
+    const target = message.mentions.users.first() || message.author;
+
+    if (!data[target.id] || data[target.id].length === 0) {
+      return message.reply(`${target.tag} has no vouches yet.`);
+    }
+
+    const list = data[target.id]
+      .map((v, i) => `${i+1}. <@${v.from}> (${v.timestamp.slice(0,10)}): ${v.reason}`)
+      .join('\n');
+
+    return message.reply(`**Vouches for ${target.tag}:**\n${list}`);
+  }
+
+  // Unknown command
+  // message.reply('Unknown command. Try $mminfo, $mercy, $vouch, $vouches');
 });
 
-// ----------------- Ticket Buttons -----------------
-client.on('interactionCreate', async interaction => {
-    if (!interaction.isButton()) return;
-    const ticketData = tickets.get(interaction.channel.id);
-    if (!ticketData) return;
-
-    // Claim
-    if (interaction.customId === 'claim') {
-        if (interaction.user.id !== SPECIAL_USER_ID) return interaction.reply({ content: "Only the main middleman can claim.", ephemeral: true });
-        ticketData.claimedBy = interaction.user.id;
-        return interaction.reply({ content: `Ticket claimed by <@${interaction.user.id}>`, ephemeral: false });
-    }
-
-    // Unclaim
-    if (interaction.customId === 'unclaim') {
-        if (interaction.user.id !== ticketData.claimedBy && !interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) 
-            return interaction.reply({ content: "Only the current claimer or admins can unclaim.", ephemeral: true });
-        ticketData.claimedBy = null;
-        return interaction.reply({ content: "Ticket unclaimed.", ephemeral: false });
-    }
-
-    // Close
-    if (interaction.customId === 'close') {
-        if (!ticketData.allowedUsers.includes(interaction.user.id) && interaction.user.id !== ticketData.claimedBy)
-            return interaction.reply({ content: "You cannot close this ticket.", ephemeral: true });
-
-        const logChannel = await interaction.guild.channels.fetch(LOG_CHANNEL_ID);
-        await logChannel.send(`Ticket closed by <@${interaction.user.id}>. Creator: <@${ticketData.creator}>`);
-        await interaction.channel.delete();
-        tickets.delete(interaction.channel.id);
-    }
-});
-
-// ----------------- Ticket Commands ($add, $transfer, $claim, $close) -----------------
-client.on('messageCreate', async message => {
-    if (!message.guild || message.author.bot) return;
-    const ticketData = tickets.get(message.channel.id);
-    if (!ticketData) return;
-
-    const args = message.content.trim().split(/ +/);
-    const cmd = args.shift().toLowerCase();
-
-    // Only allowed users or claimer can type
-    if (!ticketData.allowedUsers.includes(message.author.id) && message.author.id !== ticketData.claimedBy) return message.delete().catch(() => {});
-
-    // $add
-    if (cmd === '$add') {
-        if (message.author.id !== ticketData.creator && message.author.id !== SPECIAL_USER_ID) 
-            return message.reply("Only the ticket creator or main middleman can add users.");
-        const id = args[0].replace(/[<@!>]/g,'');
-        const member = await message.guild.members.fetch(id).catch(() => null);
-        if (!member) return message.reply('Invalid user ID.');
-        ticketData.allowedUsers.push(member.id);
-        await message.channel.permissionOverwrites.edit(member.id, { ViewChannel: true, SendMessages: true });
-        return message.reply(`Added <@${member.id}> to the ticket.`);
-    }
-
-    // $transfer
-    if (cmd === '$transfer') {
-        if (message.author.id !== ticketData.claimedBy) return message.reply("Only the current claimer can transfer.");
-        const id = args[0].replace(/[<@!>]/g,'');
-        ticketData.claimedBy = id;
-        return message.reply(`Ticket transferred to <@${id}>.`);
-    }
-
-    // $claim
-    if (cmd === '$claim') {
-        if (message.author.id !== SPECIAL_USER_ID) return message.reply("Only the main middleman can claim.");
-        ticketData.claimedBy = message.author.id;
-        return message.reply(`Ticket claimed by <@${message.author.id}>.`);
-    }
-
-    // $close
-    if (cmd === '$close') {
-        if (!ticketData.allowedUsers.includes(message.author.id) && message.author.id !== ticketData.claimedBy)
-            return message.reply("You cannot close this ticket.");
-        const logChannel = await message.guild.channels.fetch(LOG_CHANNEL_ID);
-        await logChannel.send(`Ticket closed by <@${message.author.id}>. Creator: <@${ticketData.creator}>`);
-        await message.channel.delete();
-        tickets.delete(message.channel.id);
-    }
-});
-
+// ────────────────────────────────────────────────
 client.login(process.env.TOKEN);
