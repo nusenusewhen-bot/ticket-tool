@@ -1,0 +1,15 @@
+{
+  "name": "mm-ticket-bot",
+  "version": "1.0.0",
+  "description": "Discord MM Ticket Bot",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "author": "YourName",
+  "license": "MIT",
+  "dependencies": {
+    "discord.js": "^14.15.1",
+    "dotenv": "^16.3.1"
+  }
+}
