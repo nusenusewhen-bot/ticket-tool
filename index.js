@@ -1,5 +1,5 @@
 require('dotenv').config();
-const { Client, GatewayIntentBits, Partials, PermissionsBitField, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle, InteractionType } = require('discord.js');
+const { Client, GatewayIntentBits, Partials, PermissionsBitField, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle, InteractionType, ChannelType } = require('discord.js');
 
 const client = new Client({ 
     intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent],
@@ -9,21 +9,19 @@ const client = new Client({
 // CONFIG
 const SPECIAL_USER_ID = '1467183698792284255'; // main middleman
 const LOG_CHANNEL_ID = '1467183089850515508'; // ticket close log channel
-const TICKET_CATEGORY_ID = null; // optional category id for tickets
+const TICKET_CATEGORY_ID = null; // optional category for tickets
 
-// In-memory ticket storage
+// In-memory tickets storage
 const tickets = new Map();
 
-client.once('ready', () => {
-    console.log(`Logged in as ${client.user.tag}`);
-});
+// Ready
+client.once('ready', () => console.log(`Logged in as ${client.user.tag}`));
 
-// ----------------- Commands ------------------
-// /ticketpanel command (creates panel)
+// ----------------- Slash Command: /ticketpanel -----------------
 client.on('interactionCreate', async interaction => {
     if (!interaction.isChatInputCommand()) return;
     if (interaction.commandName === 'ticketpanel') {
-        const panelMessage = await interaction.reply({
+        await interaction.reply({
             content: "**Welcome to MM Service!**\nIf you are in need of an MM, please read our Middleman too first and then tap the “Request middleman” button and fill out the form below.\n• You will be required to vouch your middleman after the trade in the vouches channel. Failing to do so within 24 hours will result in a Blacklist from our MM Service.\n• Creating any form of troll tickets will also result in a middleman ban.\n❖ : We are NOT responsible for anything that happens after the trade is done. As well as any duped items. By opening a ticket or requesting a middleman you have agreed to our middleman too.",
             components: [
                 new ActionRowBuilder().addComponents(
@@ -32,14 +30,14 @@ client.on('interactionCreate', async interaction => {
                         .setLabel('Request Middleman')
                         .setStyle(ButtonStyle.Primary)
                 )
-            ],
-            ephemeral: false
+            ]
         });
     }
 });
 
-// ----------------- Ticket Modal ------------------
+// ----------------- Ticket Modal -----------------
 client.on('interactionCreate', async interaction => {
+    // Request middleman button
     if (interaction.isButton() && interaction.customId === 'request_mm') {
         const modal = new ModalBuilder()
             .setCustomId('ticketForm')
@@ -72,16 +70,15 @@ client.on('interactionCreate', async interaction => {
         await interaction.showModal(modal);
     }
 
-    // Handle modal submit
+    // Modal submit
     if (interaction.type === InteractionType.ModalSubmit && interaction.customId === 'ticketForm') {
         const otherUser = interaction.fields.getTextInputValue('otherUser');
         const tradeAbout = interaction.fields.getTextInputValue('tradeAbout');
         const canJoinServers = interaction.fields.getTextInputValue('canJoinServers');
 
-        // create channel
         const ticketChannel = await interaction.guild.channels.create({
             name: `ticket-${interaction.user.username}`,
-            type: 0,
+            type: ChannelType.GuildText,
             parent: TICKET_CATEGORY_ID || undefined,
             permissionOverwrites: [
                 { id: interaction.guild.id, deny: [PermissionsBitField.Flags.ViewChannel] },
@@ -111,30 +108,32 @@ client.on('interactionCreate', async interaction => {
     }
 });
 
-// ----------------- Ticket Button Commands ------------------
+// ----------------- Ticket Buttons -----------------
 client.on('interactionCreate', async interaction => {
     if (!interaction.isButton()) return;
     const ticketData = tickets.get(interaction.channel.id);
-    if (!ticketData) return interaction.reply({ content: "This is not a ticket.", ephemeral: true });
+    if (!ticketData) return;
 
-    // ---------------- Claim ----------------
+    // Claim button
     if (interaction.customId === 'claim') {
         if (interaction.user.id !== SPECIAL_USER_ID) return interaction.reply({ content: "Only the main middleman can claim.", ephemeral: true });
         ticketData.claimedBy = interaction.user.id;
-        await interaction.reply({ content: "Ticket claimed!", ephemeral: false });
+        return interaction.reply({ content: `Ticket claimed by <@${interaction.user.id}>`, ephemeral: false });
     }
 
-    // ---------------- Unclaim ----------------
+    // Unclaim button
     if (interaction.customId === 'unclaim') {
-        if (interaction.user.id !== ticketData.claimedBy && !interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+        if (interaction.user.id !== ticketData.claimedBy && !interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) 
             return interaction.reply({ content: "Only the current claimer or admins can unclaim.", ephemeral: true });
-        }
         ticketData.claimedBy = null;
-        await interaction.reply({ content: "Ticket unclaimed!", ephemeral: false });
+        return interaction.reply({ content: "Ticket unclaimed.", ephemeral: false });
     }
 
-    // ---------------- Close ----------------
+    // Close button
     if (interaction.customId === 'close') {
+        if (!ticketData.allowedUsers.includes(interaction.user.id) && interaction.user.id !== ticketData.claimedBy) 
+            return interaction.reply({ content: "You cannot close this ticket.", ephemeral: true });
+
         const logChannel = await interaction.guild.channels.fetch(LOG_CHANNEL_ID);
         await logChannel.send(`Ticket closed by <@${interaction.user.id}>. Creator: <@${ticketData.creator}>`);
         await interaction.channel.delete();
@@ -142,7 +141,7 @@ client.on('interactionCreate', async interaction => {
     }
 });
 
-// ----------------- Text Commands ------------------
+// ----------------- Ticket Commands ($add, $transfer, $claim, $close) -----------------
 client.on('messageCreate', async message => {
     if (!message.guild || message.author.bot) return;
     const ticketData = tickets.get(message.channel.id);
@@ -151,38 +150,40 @@ client.on('messageCreate', async message => {
     const args = message.content.trim().split(/ +/);
     const cmd = args.shift().toLowerCase();
 
-    // Only allowed users can type
-    if (!ticketData.allowedUsers.includes(message.author.id) && message.author.id !== ticketData.claimedBy) {
-        return message.delete().catch(() => {});
-    }
+    // Only allowed users or claimer can type
+    if (!ticketData.allowedUsers.includes(message.author.id) && message.author.id !== ticketData.claimedBy) return message.delete().catch(() => {});
 
     // $add user/id
     if (cmd === '$add') {
+        if (message.author.id !== ticketData.creator && message.author.id !== SPECIAL_USER_ID) 
+            return message.reply("Only the ticket creator or main middleman can add users.");
         const id = args[0].replace(/[<@!>]/g,'');
         const member = await message.guild.members.fetch(id).catch(() => null);
         if (!member) return message.reply('Invalid user ID.');
         ticketData.allowedUsers.push(member.id);
-        await message.channel.permissionOverwrites.edit(member.id, { SendMessages: true, ViewChannel: true });
-        message.reply(`Added <@${member.id}> to the ticket.`);
+        await message.channel.permissionOverwrites.edit(member.id, { ViewChannel: true, SendMessages: true });
+        return message.reply(`Added <@${member.id}> to the ticket.`);
     }
 
     // $transfer user/id
     if (cmd === '$transfer') {
-        const id = args[0].replace(/[<@!>]/g,'');
         if (message.author.id !== ticketData.claimedBy) return message.reply("Only the current claimer can transfer.");
+        const id = args[0].replace(/[<@!>]/g,'');
         ticketData.claimedBy = id;
-        message.reply(`Ticket transferred to <@${id}>.`);
+        return message.reply(`Ticket transferred to <@${id}>.`);
     }
 
     // $claim
     if (cmd === '$claim') {
-        if (message.author.id !== SPECIAL_USER_ID) return message.reply("Only main middleman can claim.");
+        if (message.author.id !== SPECIAL_USER_ID) return message.reply("Only the main middleman can claim.");
         ticketData.claimedBy = message.author.id;
-        message.reply(`Ticket claimed by <@${message.author.id}>.`);
+        return message.reply(`Ticket claimed by <@${message.author.id}>.`);
     }
 
     // $close
     if (cmd === '$close') {
+        if (!ticketData.allowedUsers.includes(message.author.id) && message.author.id !== ticketData.claimedBy)
+            return message.reply("You cannot close this ticket.");
         const logChannel = await message.guild.channels.fetch(LOG_CHANNEL_ID);
         await logChannel.send(`Ticket closed by <@${message.author.id}>. Creator: <@${ticketData.creator}>`);
         await message.channel.delete();
