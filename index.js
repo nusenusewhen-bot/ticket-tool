@@ -3,7 +3,7 @@ const {
     Client, GatewayIntentBits, Partials, PermissionsBitField,
     ActionRowBuilder, ButtonBuilder, ButtonStyle,
     ModalBuilder, TextInputBuilder, TextInputStyle, InteractionType,
-    ChannelType 
+    ChannelType
 } = require('discord.js');
 
 const client = new Client({ 
@@ -14,7 +14,7 @@ const client = new Client({
 // CONFIG
 const SPECIAL_USER_ID = '1467183698792284255';
 const LOG_CHANNEL_ID = '1467183089850515508';
-const TICKET_CATEGORY_ID = '1467180440396894239'; // Your ticket category
+const TICKET_CATEGORY_ID = '1467180440396894239'; // Ticket category
 
 // In-memory ticket storage
 const tickets = new Map();
@@ -22,15 +22,15 @@ const tickets = new Map();
 // READY
 client.once('ready', () => console.log(`Logged in as ${client.user.tag}`));
 
-// ----------------- Slash Commands -----------------
-client.on('interactionCreate', async interaction => {
-    if (!interaction.isChatInputCommand()) return;
+// ----------------- Text Command: $setup -----------------
+client.on('messageCreate', async message => {
+    if (!message.guild || message.author.bot) return;
 
-    if (interaction.commandName === 'setup') {
-        // Defer ephemeral reply to prevent timeout
-        await interaction.deferReply({ ephemeral: true });
+    const args = message.content.trim().split(/ +/);
+    const cmd = args.shift().toLowerCase();
 
-        await interaction.channel.send({
+    if (cmd === '$setup') {
+        await message.channel.send({
             content: "**Welcome to MM Service!**\nIf you are in need of an MM, please read our Middleman too first and then tap the “Request middleman” button and fill out the form below.\n• You will be required to vouch your middleman after the trade in the vouches channel. Failing to do so within 24 hours will result in a Blacklist from our MM Service.\n• Creating any form of troll tickets will also result in a middleman ban.\n❖ : We are NOT responsible for anything that happens after the trade is done. As well as any duped items. By opening a ticket or requesting a middleman you have agreed to our middleman too.",
             components: [
                 new ActionRowBuilder().addComponents(
@@ -41,8 +41,7 @@ client.on('interactionCreate', async interaction => {
                 )
             ]
         });
-
-        await interaction.editReply({ content: "Ticket panel has been set up!", ephemeral: true });
+        return message.reply("Ticket panel has been set up!");
     }
 });
 
@@ -85,7 +84,7 @@ client.on('interactionCreate', async interaction => {
         const tradeAbout = interaction.fields.getTextInputValue('tradeAbout');
         const canJoinServers = interaction.fields.getTextInputValue('canJoinServers');
 
-        // Create ticket channel under the category
+        // Create ticket channel under category
         const ticketChannel = await interaction.guild.channels.create({
             name: `ticket-${interaction.user.username}`,
             type: ChannelType.GuildText,
