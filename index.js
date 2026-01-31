@@ -1,171 +1,210 @@
-const { Client, GatewayIntentBits } = require('discord.js');
-const fs = require('fs');
+import { Client, GatewayIntentBits, Events, EmbedBuilder } from 'discord.js';
+import Database from 'better-sqlite3';
 
-// ────────────────────────────────────────────────
-// Data file
-const DATA_FILE = './image.json';
-let vouchData = {}; // { userID: number }
+const db = new Database('./cooldowns.db', { verbose: console.log });
 
-if (fs.existsSync(DATA_FILE)) {
-  try {
-    vouchData = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
-  } catch (err) {
-    console.error('Error reading image.json, starting fresh:', err);
-    vouchData = {};
-  }
-} else {
-  fs.writeFileSync(DATA_FILE, JSON.stringify(vouchData, null, 2));
-}
+// Ensure table exists
+db.exec(`
+  CREATE TABLE IF NOT EXISTS cooldowns (
+    userId TEXT PRIMARY KEY,
+    lastUse INTEGER NOT NULL DEFAULT 0
+  )
+`);
 
-function saveVouchData() {
-  fs.writeFileSync(DATA_FILE, JSON.stringify(vouchData, null, 2));
-}
-
-// ────────────────────────────────────────────────
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.GuildMembers,
-    GatewayIntentBits.MessageContent
+    GatewayIntentBits.MessageContent,
+    GatewayIntentBits.GuildMembers
   ]
 });
 
-client.once('ready', () => {
-  console.log(`Logged in as ${client.user.tag} | In ${client.guilds.cache.size} servers`);
+const TOKEN = process.env.DISCORD_TOKEN || 'YOUR_TOKEN_HERE_PUT_IN_ENV';
+
+// Ladder: lowest → highest
+const LADDER = [
+  "1467183899275821180", // 1
+  "1467183698792284255", // 2
+  "1467183999146528962", // 3
+  "1467184107594186843", // 4
+  "1467184238259474698", // 5
+  "1467184373496283348", // 6
+  "1467184478102487237", // 7
+  "1467184633958502465", // 8
+  "1467184754368446658", // 9
+  "1467184829236773017", // 10
+  "1467184894491885568"  // GOD
+];
+
+const GOD_ROLE_ID = LADDER[LADDER.length - 1];
+
+function getLevel(roleId) {
+  const index = LADDER.indexOf(roleId);
+  return index === -1 ? 0 : index + 1;
+}
+
+function getHighestLevel(roles) {
+  let max = 0;
+  for (const role of roles.cache.values()) {
+    const lvl = getLevel(role.id);
+    if (lvl > max) max = lvl;
+  }
+  return max;
+}
+
+function getCooldown(userId) {
+  const row = db.prepare('SELECT lastUse FROM cooldowns WHERE userId = ?').get(userId);
+  return row?.lastUse || 0;
+}
+
+function setCooldown(userId) {
+  const now = Date.now();
+  db.prepare(`
+    INSERT INTO cooldowns (userId, lastUse)
+    VALUES (?, ?)
+    ON CONFLICT(userId) DO UPDATE SET lastUse = excluded.lastUse
+  `).run(userId, now);
+}
+
+client.once(Events.ClientReady, () => {
+  console.log(`✅ Bot online | ${client.user.tag} | ${new Date().toUTCString()}`);
 });
 
-// ────────────────────────────────────────────────
-// Allowed role ID – only members with this role can use commands
-const ALLOWED_ROLE_ID = '1467183698792284255';
-
-client.on('messageCreate', async (message) => {
-  if (message.author.bot) return;
-
-  // Only allow commands from users with the specific role
-  if (!message.member.roles.cache.has(ALLOWED_ROLE_ID)) {
-    return; // silently ignore – or uncomment below for feedback
-    // return message.reply('You do not have permission to use bot commands.');
-  }
+client.on(Events.MessageCreate, async (message) => {
+  if (message.author.bot || !message.guild) return;
 
   const content = message.content.trim();
+  if (!content.startsWith('+')) return;
 
-  // ────────────────────────────────────────────────
-  // + prefix commands (vouch system)
-  if (content.startsWith('+')) {
-    const args = content.slice(1).trim().split(/ +/);
-    const command = args.shift()?.toLowerCase();
+  // ────────────────────────────────
+  // +perks   or   +perks @user
+  // ────────────────────────────────
+  if (content.startsWith('+perks')) {
+    let target = message.member;
 
-    // +vouch @user
-    if (command === 'vouch') {
-      const targetMember = message.mentions.members.first();
-      if (!targetMember) {
-        return message.reply('Mention a user → `+vouch @user`');
-      }
-
-      const userId = targetMember.id;
-      vouchData[userId] = (vouchData[userId] || 0) + 1;
-      saveVouchData();
-
-      return message.reply(`${targetMember} now has **${vouchData[userId]}** vouches! +1 ✅`);
+    if (message.mentions.members.size > 0) {
+      target = message.mentions.members.first();
     }
 
-    // +vouches [@user]
-    if (command === 'vouches') {
-      const target = message.mentions.users.first() || message.author;
-      const count = vouchData[target.id] || 0;
+    const highest = getHighestLevel(target.roles);
+    const isGod = target.roles.cache.has(GOD_ROLE_ID);
 
-      return message.reply(`${target} has **${count}** vouches.`);
+    const embed = new EmbedBuilder()
+      .setAuthor({ name: `Rank Perks • ${target.user.username}`, iconURL: target.displayAvatarURL({ size: 64 }) })
+      .setColor(isGod ? 0xFFD700 : 0x5865F2)
+      .setTimestamp();
+
+    if (highest === 0) {
+      embed.setDescription(`${target === message.member ? "You don't" : `<@${target.id}> doesn't`} have any ranking role yet.`);
+      return message.reply({ embeds: [embed] });
     }
 
-    // +vouchconfig @user number
-    if (command === 'vouchconfig') {
-      const targetMember = message.mentions.members.first();
-      if (!targetMember) {
-        return message.reply('Mention a user → `+vouchconfig @user number`');
-      }
+    const currentRoleId = LADDER[highest - 1];
+    const currentRole = message.guild.roles.cache.get(currentRoleId);
 
-      const numberStr = args[1];
-      if (!numberStr || isNaN(numberStr)) {
-        return message.reply('Provide a valid number → `+vouchconfig @user 10`');
-      }
+    if (isGod) {
+      let desc = "**GOD RANK** — Full control\nYou can promote anyone to **any lower rank**:\n\n";
+      LADDER.slice(0, -1).forEach((id, i) => {
+        const r = message.guild.roles.cache.get(id);
+        desc += `• **${i + 1}**. ${r?.name ?? 'Deleted Role'} (<@&${id}>)\n`;
+      });
+      embed.setDescription(desc);
+      embed.setFooter({ text: "Can assign any rank below GOD • 1 promotion/hour" });
+    } else {
+      const nextId = LADDER[highest];
+      const nextRole = message.guild.roles.cache.get(nextId);
 
-      const newCount = parseInt(numberStr, 10);
-      if (newCount < 0) {
-        return message.reply('Vouch count cannot be negative.');
-      }
-
-      vouchData[targetMember.id] = newCount;
-      saveVouchData();
-
-      return message.reply(`Set ${targetMember}'s vouches to **${newCount}**.`);
+      embed.setDescription(
+        `**Current rank**: ${currentRole?.name ?? '???'} (Level ${highest})\n\n` +
+        `You can promote users **one step up** to:\n` +
+        `→ **${nextRole?.name ?? 'Next rank'}** (<@&${nextId}>)\n\n` +
+        `*Strict ladder rule: only the immediate next rank is allowed.*`
+      );
+      embed.setFooter({ text: `Level ${highest} • 1 promotion per hour` });
     }
 
-    return; // unknown + command – ignore silently
+    return message.reply({ embeds: [embed] });
   }
 
-  // ────────────────────────────────────────────────
-  // $ prefix commands (old ones – still restricted to the role)
-  if (content.startsWith('$')) {
-    const args = content.slice(1).trim().split(/ +/);
-    const command = args.shift()?.toLowerCase();
-
-    // $mminfo
-    if (command === 'mminfo') {
-      const mmText = `
-• A middleman is a trusted go-between who holds payment until the seller delivers goods or services.
-• The funds are released once the buyer confirms everything is as agreed.
-• This process helps prevent scams, build trust, and resolve disputes.
-• Common in valuable games, real-life money trades, in-game currency, and collectibles.
-• Only works safely if the middleman is reputable and verified.
-      `.trim();
-
-      const imageUrl = 'https://cdn.discordapp.com/attachments/1466651539778175100/1467235981433503907/middleman1.webp?ex=697fa57d&is=697e53fd&hm=c6976730fb89e6ad39c6371c1a8b524f21cbd1e190a648325fc16985c1eb9a66&';
-
-      try {
-        await message.channel.send({
-          content: mmText,
-          files: [{ attachment: imageUrl, name: 'middleman-diagram.webp' }]
-        });
-      } catch (err) {
-        console.error('Failed $mminfo:', err);
-        await message.reply('Could not send MM info.');
-      }
-      return;
+  // ────────────────────────────────
+  // +rank @user <role>
+  // ────────────────────────────────
+  if (content.startsWith('+rank')) {
+    const args = content.slice(5).trim().split(/\s+/);
+    if (args.length < 2) {
+      return message.reply("Usage: `+rank @user <role>` (mention, name or ID)");
     }
 
-    // $mercy @user
-    if (command === 'mercy') {
-      const targetMember = message.mentions.members.first();
-      if (!targetMember) return message.reply('Mention someone! → `$mercy @user`');
+    const target = message.mentions.members.first();
+    if (!target) return message.reply("Please mention a valid user.");
 
-      if (targetMember.id === message.author.id) return message.reply("Can't mercy yourself 😭");
-      if (targetMember.user.bot) return message.reply("Can't mercy bots 🤖");
+    // Role can be mention, name or ID
+    let roleQuery = args.slice(1).join(' ');
+    if (message.mentions.roles.size > 0) {
+      roleQuery = message.mentions.roles.first().id;
+    }
 
-      const roleId = '1467183595561943124';
+    const role = message.guild.roles.cache.find(r =>
+      r.id === roleQuery ||
+      r.name.toLowerCase() === roleQuery.toLowerCase() ||
+      r.id === roleQuery.replace(/[<@&>]/g, '')
+    );
 
-      try {
-        await targetMember.roles.add(roleId);
+    if (!role || !LADDER.includes(role.id)) {
+      return message.reply("That role is **not** in the ranking ladder.");
+    }
 
-        const learnLink = 'https://discord.com/channels/1467177582951661570/1467182217003532338';
-        const rulesLink = 'https://discord.com/channels/1467177582951661570/1467182178499563751';
+    const authorLvl = getHighestLevel(message.member.roles);
+    const targetLvl = getHighestLevel(target.roles);
+    const wantedLvl = getLevel(role.id);
 
-        const recruitMsg = `${targetMember} has been recruited! 🎉\n` +
-                           `Go learn shit here → ${learnLink}\n` +
-                           `And read the fuckass rules here → ${rulesLink}\n\n` +
-                           `made by love from schior 😎`;
+    if (authorLvl === 0) {
+      return message.reply("You don't have permission to rank anyone.");
+    }
 
-        await message.channel.send(recruitMsg);
-      } catch (error) {
-        console.error('Mercy failed:', error);
-        await message.reply('Failed to mercy – check bot perms/role position.');
+    if (wantedLvl > authorLvl) {
+      return message.reply("You cannot assign a rank **higher** than your own.");
+    }
+
+    if (targetLvl >= wantedLvl) {
+      return message.reply("That user already has equal or higher rank.");
+    }
+
+    // Non-GOD: only allow exact next step
+    if (!message.member.roles.cache.has(GOD_ROLE_ID)) {
+      if (wantedLvl !== authorLvl + 1) {
+        return message.reply("You can only promote to the **next rank** in the ladder.");
       }
-      return;
+    }
+
+    // Cooldown: 1 hour = 3600 seconds
+    const lastUse = getCooldown(message.author.id);
+    const now = Date.now();
+    if (now - lastUse < 3_600_000) {
+      const left = Math.ceil((3_600_000 - (now - lastUse)) / 60_000);
+      return message.reply(`Wait **${left} minute${left === 1 ? '' : 's'}** before ranking again.`);
+    }
+
+    // Do the promotion
+    try {
+      await target.roles.add(role.id);
+      setCooldown(message.author.id);
+
+      const successEmbed = new EmbedBuilder()
+        .setColor(0x00FF88)
+        .setDescription(`✅ **${target.user.tag}** promoted to **${role.name}**`)
+        .setFooter({ text: `By ${message.author.tag}` })
+        .setTimestamp();
+
+      return message.reply({ embeds: [successEmbed] });
+    } catch (err) {
+      console.error(err);
+      return message.reply("Failed to assign role (check my permissions / role hierarchy).");
     }
   }
-
-  // No command matched or no prefix → do nothing
 });
 
-// ────────────────────────────────────────────────
-client.login(process.env.TOKEN);
+client.login(TOKEN).catch(err => {
+  console.error("Login failed:", err);
+});
