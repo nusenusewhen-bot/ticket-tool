@@ -1,17 +1,17 @@
 {
-  "name": "discord-vouch-mercy-bot",
+  "name": "discord-rank-ladder-bot",
   "version": "1.0.0",
-  "description": "Discord bot with vouch, mminfo and mercy commands",
+  "description": "Strict ladder ranking bot with cooldown",
   "main": "index.js",
+  "type": "module",
   "scripts": {
     "start": "node index.js"
   },
   "dependencies": {
-    "discord.js": "^14.17.1"
+    "discord.js": "^14.16.3",
+    "better-sqlite3": "^11.5.0"
   },
   "engines": {
-    "node": ">=18.x"
-  },
-  "author": "schior 😎",
-  "license": "ISC"
+    "node": ">=18"
+  }
 }
