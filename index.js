@@ -24,27 +24,31 @@ const client = new Client({
 const TOKEN = process.env.DISCORD_TOKEN;
 
 // ──── Roles & Rules ────
-// Highest to lowest order
+// Highest → lowest, as per your latest list
 const LADDER = [
-  "1467184894491885568", // 11 top
-  "1467184829236773017", // 10
-  "1467184754368446658", // 9
-  "1467184633958502465", // 8
-  "1467184478102487237", // 7
+  "1467184894491885568", // 1
+  "1467184829236773017", // 2
+  "1467184754368446658", // 3
+  "1467184633958502465", // 4
+  "1467184478102487237", // 5
   "1467184373496283348", // 6
-  "1467184238259474698", // 5
-  "1467184107594186843", // 4
-  "1467183999146528962", // 3
-  "1467183698792284255", // 2
-  "1467229613041258760", // inserted new role
-  "1467183899275821180", // 1
-  "1467185226097889312", // third last
-  "1467185290341908641", // second last
-  "1467185174663008462"  // last
+  "1467184238259474698", // 7
+  "1467184107594186843", // 8
+  "1467183999146528962", // 9
+  "1467183899275821180", // 10
+  "1467183771169194249", // 11
+  "1467183698792284255", // 12
+  "1467392959262494836", // 13
+  "1467229613041258760", // 14
+  "1467185226097889312", // 15
+  "1467185290341908641", // 16
+  "1467185174663008462", // 17
+  "1467183595561943124", // 18
+  "1467183497272885483"  // 19
 ];
 
 const PROMOTION_RULES = [
-  { granter: "1467185545431224421", maxTarget: "1467184894491885568" },
+  { granter: "1467185545431224421", maxTarget: "1467184894491885568" }, // full access
   { granter: "1467184894491885568", maxTarget: "1467184373496283348" },
   { granter: "1467184829236773017", maxTarget: "1467184107594186843" },
   { granter: "1467184633958502465", maxTarget: "1467183771169194249" },
@@ -128,7 +132,7 @@ client.on(Events.MessageCreate, async (message) => {
     let desc = `**You can promote up to:**\n→ **${message.guild.roles.cache.get(LADDER[LADDER.length - maxLvl])?.name ?? 'Unknown'}** (<@&${LADDER[LADDER.length - maxLvl]}>)\n\n`;
     desc += isFullAccess ? "**Full access** — you can promote to **any rank**.\n\nAll ranks:\n" : "Allowed ranks:\n";
 
-    // Display from highest → lowest
+    // Show all roles from highest → lowest
     LADDER.forEach((id, i) => {
       const r = message.guild.roles.cache.get(id);
       if (r) desc += `• ${i + 1}. ${r.name} (<@&${id}>)\n`;
