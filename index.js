@@ -20,15 +20,26 @@ const client = new Client({
   ]
 });
 
-// ──── Token from Railway secret ────
-const TOKEN = process.env.DISCORD_TOKEN; // no dotenv needed
+// ──── Token from Railway secrets ────
+const TOKEN = process.env.DISCORD_TOKEN;
 
 // ──── Roles & Rules ────
 const LADDER = [
-  "1467183899275821180","1467183698792284255","1467183999146528962",
-  "1467184107594186843","1467184238259474698","1467184373496283348",
-  "1467184478102487237","1467184633958502465","1467184754368446658",
-  "1467184829236773017","1467184894491885568"
+  "1467183899275821180", // 1
+  "1467229613041258760", // inserted new role
+  "1467183698792284255", // 2
+  "1467183999146528962", // 3
+  "1467184107594186843", // 4
+  "1467184238259474698", // 5
+  "1467184373496283348", // 6
+  "1467184478102487237", // 7
+  "1467184633958502465", // 8
+  "1467184754368446658", // 9
+  "1467184829236773017", // 10
+  "1467184894491885568", // 11 - top
+  "1467185226097889312", // third last
+  "1467185290341908641", // second last
+  "1467185174663008462"  // last
 ];
 
 const PROMOTION_RULES = [
@@ -39,7 +50,7 @@ const PROMOTION_RULES = [
   { granter: "1467184754368446658", maxTarget: "1467183899275821180" }
 ];
 
-// ──── Helper functions ────
+// ──── Helpers ────
 function getLevel(roleId) {
   const idx = LADDER.indexOf(roleId);
   return idx === -1 ? 0 : idx + 1;
@@ -98,9 +109,7 @@ client.on(Events.MessageCreate, async (message) => {
   // +perks
   if (content === '+perks' || content.startsWith('+perks ')) {
     let target = message.member;
-    if (message.mentions.members.size > 0) {
-      target = message.mentions.members.first();
-    }
+    if (message.mentions.members.size > 0) target = message.mentions.members.first();
 
     const embed = new EmbedBuilder()
       .setAuthor({ name: `Permissions • ${target.user.username}`, iconURL: target.displayAvatarURL({ size: 64 }) })
@@ -116,11 +125,10 @@ client.on(Events.MessageCreate, async (message) => {
     const isFullAccess = maxLvl >= getLevel("1467184894491885568");
 
     let desc = `**You can promote up to:**\n→ **${message.guild.roles.cache.get(LADDER[maxLvl - 1])?.name ?? 'Unknown'}** (<@&${LADDER[maxLvl - 1]}>)\n\n`;
+    desc += isFullAccess ? "**Full access** — you can promote to **any rank**.\n\nAll ranks:\n" : "Allowed ranks:\n";
 
-    desc += isFullAccess ? "**Full access** — you can promote to **any rank** in the system.\n\nAll ranks:\n" : "Allowed ranks:\n";
-
-    const sortedLadder = [...LADDER].reverse();
-    sortedLadder.slice(0, maxLvl).forEach((id, i) => {
+    // Show all roles, numbering correct
+    LADDER.forEach((id, i) => {
       const r = message.guild.roles.cache.get(id);
       if (r) desc += `• ${i + 1}. ${r.name} (<@&${id}>)\n`;
     });
@@ -133,7 +141,7 @@ client.on(Events.MessageCreate, async (message) => {
   // +rank
   if (content.startsWith('+rank')) {
     const args = message.content.slice(5).trim().split(/\s+/);
-    if (args.length < 2) return message.reply("Usage: `+rank @user <role>` (mention, name or ID)");
+    if (args.length < 2) return message.reply("Usage: `+rank @user <role>`");
 
     const target = message.mentions.members.first();
     if (!target) return message.reply("Mention a valid user.");
