@@ -22,7 +22,7 @@ const client = new Client({
 
 const TOKEN = process.env.DISCORD_TOKEN || 'YOUR_BOT_TOKEN_HERE_REPLACE_ME';
 
-// All known roles in the system (for reference and display)
+// All known roles in the system (for reference and +perks display)
 const LADDER = [
   "1467183899275821180", // 1
   "1467183698792284255", // 2
@@ -39,6 +39,7 @@ const LADDER = [
 
 // Who can promote → and up to which maximum role
 const PROMOTION_RULES = [
+  { granter: "1467185545431224421", maxTarget: "1467184894491885568" }, // NEW: can promote to ALL
   { granter: "1467184894491885568", maxTarget: "1467184373496283348" },
   { granter: "1467184829236773017", maxTarget: "1467184107594186843" },
   { granter: "1467184633958502465", maxTarget: "1467183771169194249" },
@@ -116,10 +117,18 @@ client.on(Events.MessageCreate, async (message) => {
     }
 
     const maxLvl = getMaxAllowedTargetLevel(target.roles);
+    const isFullAccess = maxLvl >= getLevel("1467184894491885568");
+
     const maxRoleId = LADDER[maxLvl - 1];
     const maxRole = message.guild.roles.cache.get(maxRoleId);
 
-    let desc = `**You can promote up to:**\n→ **${maxRole?.name ?? 'Unknown'}** (<@&${maxRoleId}>)\n\nAllowed ranks:\n`;
+    let desc = `**You can promote up to:**\n→ **${maxRole?.name ?? 'Unknown'}** (<@&${maxRoleId}>)\n\n`;
+
+    if (isFullAccess) {
+      desc += "**Full access** — you can promote to **any rank** in the system.\n\nAll ranks:\n";
+    } else {
+      desc += "Allowed ranks:\n";
+    }
 
     LADDER.slice(0, maxLvl).forEach((id, i) => {
       const r = message.guild.roles.cache.get(id);
