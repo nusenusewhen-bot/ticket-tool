@@ -1,11 +1,8 @@
 import { Client, GatewayIntentBits, Events, EmbedBuilder } from 'discord.js';
 import Database from 'better-sqlite3';
-import dotenv from 'dotenv';
-dotenv.config();
 
+// ──── Database ────
 const db = new Database('./cooldowns.db');
-
-// Create table if not exists
 db.exec(`
   CREATE TABLE IF NOT EXISTS cooldowns (
     userId TEXT PRIMARY KEY,
@@ -13,6 +10,7 @@ db.exec(`
   )
 `);
 
+// ──── Client ────
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -22,32 +20,26 @@ const client = new Client({
   ]
 });
 
-const TOKEN = process.env.DISCORD_TOKEN || 'YOUR_BOT_TOKEN_HERE_REPLACE_ME';
+// ──── Token from Railway secret ────
+const TOKEN = process.env.DISCORD_TOKEN; // no dotenv needed
 
-// All known roles in the system (for reference and +perks display)
+// ──── Roles & Rules ────
 const LADDER = [
-  "1467183899275821180", // 1
-  "1467183698792284255", // 2
-  "1467183999146528962", // 3
-  "1467184107594186843", // 4
-  "1467184238259474698", // 5
-  "1467184373496283348", // 6
-  "1467184478102487237", // 7
-  "1467184633958502465", // 8
-  "1467184754368446658", // 9
-  "1467184829236773017", // 10
-  "1467184894491885568"  // 11 - top
+  "1467183899275821180","1467183698792284255","1467183999146528962",
+  "1467184107594186843","1467184238259474698","1467184373496283348",
+  "1467184478102487237","1467184633958502465","1467184754368446658",
+  "1467184829236773017","1467184894491885568"
 ];
 
-// Who can promote → and up to which maximum role
 const PROMOTION_RULES = [
-  { granter: "1467185545431224421", maxTarget: "1467184894491885568" }, // FULL ACCESS
+  { granter: "1467185545431224421", maxTarget: "1467184894491885568" },
   { granter: "1467184894491885568", maxTarget: "1467184373496283348" },
   { granter: "1467184829236773017", maxTarget: "1467184107594186843" },
   { granter: "1467184633958502465", maxTarget: "1467183771169194249" },
   { granter: "1467184754368446658", maxTarget: "1467183899275821180" }
 ];
 
+// ──── Helper functions ────
 function getLevel(roleId) {
   const idx = LADDER.indexOf(roleId);
   return idx === -1 ? 0 : idx + 1;
@@ -91,17 +83,19 @@ function setCooldown(userId) {
   `).run(userId, now);
 }
 
+// ──── Ready ────
 client.once(Events.ClientReady, () => {
   console.log(`Logged in as ${client.user.tag} — ${new Date().toUTCString()}`);
 });
 
+// ──── Commands ────
 client.on(Events.MessageCreate, async (message) => {
   if (message.author.bot || !message.guild) return;
   if (!message.content.startsWith('+')) return;
 
   const content = message.content.trim().toLowerCase();
 
-  // ──── +perks ────
+  // +perks
   if (content === '+perks' || content.startsWith('+perks ')) {
     let target = message.member;
     if (message.mentions.members.size > 0) {
@@ -123,13 +117,8 @@ client.on(Events.MessageCreate, async (message) => {
 
     let desc = `**You can promote up to:**\n→ **${message.guild.roles.cache.get(LADDER[maxLvl - 1])?.name ?? 'Unknown'}** (<@&${LADDER[maxLvl - 1]}>)\n\n`;
 
-    if (isFullAccess) {
-      desc += "**Full access** — you can promote to **any rank** in the system.\n\nAll ranks:\n";
-    } else {
-      desc += "Allowed ranks:\n";
-    }
+    desc += isFullAccess ? "**Full access** — you can promote to **any rank** in the system.\n\nAll ranks:\n" : "Allowed ranks:\n";
 
-    // Display all roles descending (best first)
     const sortedLadder = [...LADDER].reverse();
     sortedLadder.slice(0, maxLvl).forEach((id, i) => {
       const r = message.guild.roles.cache.get(id);
@@ -138,24 +127,19 @@ client.on(Events.MessageCreate, async (message) => {
 
     embed.setDescription(desc);
     embed.setFooter({ text: "1 promotion per hour • Strict max limit" });
-
     return message.reply({ embeds: [embed] });
   }
 
-  // ──── +rank @user <role> ────
+  // +rank
   if (content.startsWith('+rank')) {
     const args = message.content.slice(5).trim().split(/\s+/);
-    if (args.length < 2) {
-      return message.reply("Usage: `+rank @user <role>` (mention, name or ID)");
-    }
+    if (args.length < 2) return message.reply("Usage: `+rank @user <role>` (mention, name or ID)");
 
     const target = message.mentions.members.first();
     if (!target) return message.reply("Mention a valid user.");
 
     let roleQuery = args.slice(1).join(' ');
-    if (message.mentions.roles.size > 0) {
-      roleQuery = message.mentions.roles.first().id;
-    }
+    if (message.mentions.roles.size > 0) roleQuery = message.mentions.roles.first().id;
 
     const role = message.guild.roles.cache.find(r =>
       r.id === roleQuery ||
@@ -163,31 +147,19 @@ client.on(Events.MessageCreate, async (message) => {
       r.id === roleQuery.replace(/[<@&>]/g, '')
     );
 
-    if (!role || !LADDER.includes(role.id)) {
-      return message.reply("That role is **not** in the ranking system.");
-    }
-
-    if (!canPromote(message.member.roles)) {
-      return message.reply("You are not allowed to use +rank.");
-    }
+    if (!role || !LADDER.includes(role.id)) return message.reply("That role is **not** in the ranking system.");
+    if (!canPromote(message.member.roles)) return message.reply("You are not allowed to use +rank.");
 
     const authorMaxLvl = getMaxAllowedTargetLevel(message.member.roles);
     const wantedLvl = getLevel(role.id);
-
-    if (wantedLvl > authorMaxLvl) {
-      return message.reply("That rank is above your allowed maximum.");
-    }
+    if (wantedLvl > authorMaxLvl) return message.reply("That rank is above your allowed maximum.");
 
     const targetLvl = getHighestLevel(target.roles);
+    if (targetLvl >= wantedLvl) return message.reply("Target already has equal or higher rank.");
 
-    if (targetLvl >= wantedLvl) {
-      return message.reply("Target already has equal or higher rank.");
-    }
-
-    // ──── Cooldown check ────
     const lastUse = getCooldown(message.author.id);
     const now = Date.now();
-    const bypassCooldown = message.member.roles.cache.has("1467185545431224421"); // special bypass
+    const bypassCooldown = message.member.roles.cache.has("1467185545431224421");
 
     if (!bypassCooldown && now - lastUse < 3600000) {
       const remaining = Math.ceil((3600000 - (now - lastUse)) / 60000);
@@ -212,6 +184,4 @@ client.on(Events.MessageCreate, async (message) => {
   }
 });
 
-client.login(TOKEN).catch(err => {
-  console.error('Login failed:', err);
-});
+client.login(TOKEN).catch(err => console.error('Login failed:', err));
