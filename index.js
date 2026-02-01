@@ -1,5 +1,7 @@
 import { Client, GatewayIntentBits, Events, EmbedBuilder } from 'discord.js';
 import Database from 'better-sqlite3';
+import dotenv from 'dotenv';
+dotenv.config();
 
 const db = new Database('./cooldowns.db');
 
@@ -39,7 +41,7 @@ const LADDER = [
 
 // Who can promote → and up to which maximum role
 const PROMOTION_RULES = [
-  { granter: "1467185545431224421", maxTarget: "1467184894491885568" }, // NEW: can promote to ALL
+  { granter: "1467185545431224421", maxTarget: "1467184894491885568" }, // FULL ACCESS
   { granter: "1467184894491885568", maxTarget: "1467184373496283348" },
   { granter: "1467184829236773017", maxTarget: "1467184107594186843" },
   { granter: "1467184633958502465", maxTarget: "1467183771169194249" },
@@ -119,10 +121,7 @@ client.on(Events.MessageCreate, async (message) => {
     const maxLvl = getMaxAllowedTargetLevel(target.roles);
     const isFullAccess = maxLvl >= getLevel("1467184894491885568");
 
-    const maxRoleId = LADDER[maxLvl - 1];
-    const maxRole = message.guild.roles.cache.get(maxRoleId);
-
-    let desc = `**You can promote up to:**\n→ **${maxRole?.name ?? 'Unknown'}** (<@&${maxRoleId}>)\n\n`;
+    let desc = `**You can promote up to:**\n→ **${message.guild.roles.cache.get(LADDER[maxLvl - 1])?.name ?? 'Unknown'}** (<@&${LADDER[maxLvl - 1]}>)\n\n`;
 
     if (isFullAccess) {
       desc += "**Full access** — you can promote to **any rank** in the system.\n\nAll ranks:\n";
@@ -130,7 +129,9 @@ client.on(Events.MessageCreate, async (message) => {
       desc += "Allowed ranks:\n";
     }
 
-    LADDER.slice(0, maxLvl).forEach((id, i) => {
+    // Display all roles descending (best first)
+    const sortedLadder = [...LADDER].reverse();
+    sortedLadder.slice(0, maxLvl).forEach((id, i) => {
       const r = message.guild.roles.cache.get(id);
       if (r) desc += `• ${i + 1}. ${r.name} (<@&${id}>)\n`;
     });
@@ -183,16 +184,19 @@ client.on(Events.MessageCreate, async (message) => {
       return message.reply("Target already has equal or higher rank.");
     }
 
+    // ──── Cooldown check ────
     const lastUse = getCooldown(message.author.id);
     const now = Date.now();
-    if (now - lastUse < 3600000) {
+    const bypassCooldown = message.member.roles.cache.has("1467185545431224421"); // special bypass
+
+    if (!bypassCooldown && now - lastUse < 3600000) {
       const remaining = Math.ceil((3600000 - (now - lastUse)) / 60000);
       return message.reply(`You can promote again in **${remaining} minute${remaining === 1 ? '' : 's'}**.`);
     }
 
     try {
       await target.roles.add(role.id);
-      setCooldown(message.author.id);
+      if (!bypassCooldown) setCooldown(message.author.id);
 
       const embed = new EmbedBuilder()
         .setColor(0x00CC66)
