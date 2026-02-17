@@ -15,7 +15,6 @@ const client = new Client({
 
 client.commands = new Collection();
 
-// Load command files from SAME folder (not subfolder)
 const commandFiles = [
   'balance.js',
   'setaddress.js',
@@ -34,6 +33,14 @@ for (const file of commandFiles) {
   }
 }
 
+// List of server IDs where commands work INSTANTLY
+// Add your friends' servers, your servers, etc.
+const INSTANT_SERVERS = [
+  'YOUR_FIRST_SERVER_ID',   // Replace with actual server ID
+  'YOUR_SECOND_SERVER_ID',  // Add more if you want
+  // 'ANOTHER_SERVER_ID',    // Uncomment and add more
+];
+
 client.once('ready', async () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
   client.user.setActivity('/bal | /mybal | /ltcprice', { type: 'WATCHING' });
@@ -51,8 +58,25 @@ client.once('ready', async () => {
     }
     
     const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
+    
+    // Deploy to specific servers INSTANTLY
+    for (const guildId of INSTANT_SERVERS) {
+      if (guildId && guildId !== 'YOUR_FIRST_SERVER_ID') {
+        try {
+          await rest.put(Routes.applicationGuildCommands(client.user.id, guildId), { body: [] });
+          await rest.put(Routes.applicationGuildCommands(client.user.id, guildId), { body: commands });
+          console.log(`⚡ INSTANT commands in server: ${guildId}`);
+        } catch (e) {
+          console.log(`❌ Failed to deploy to ${guildId}: ${e.message}`);
+        }
+      }
+    }
+    
+    // Also deploy globally (for DMs + all other servers - takes 1 hour)
+    console.log('🚀 Deploying global commands...');
     await rest.put(Routes.applicationCommands(client.user.id), { body: commands });
-    console.log(`✅ ${commands.length} commands deployed`);
+    console.log(`✅ Global commands deployed (DMs work in ~1 hour)`);
+    
   } catch (error) {
     console.error('❌ Error:', error);
   }
