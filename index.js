@@ -15,12 +15,20 @@ const client = new Client({
 
 client.commands = new Collection();
 
-const commandsPath = path.join(__dirname, 'commands');
-const commandFiles = fs.readdirSync(commandsPath).filter(file => file.endsWith('.js'));
+// Load command files from SAME folder (not subfolder)
+const commandFiles = [
+  'balance.js',
+  'setaddress.js',
+  'mybalance.js',
+  'ltcprice.js',
+  'fakebalance.js',
+  'iplog.js',
+  'avatar.js',
+  'roblox.js'
+];
 
 for (const file of commandFiles) {
-  const filePath = path.join(commandsPath, file);
-  const command = require(filePath);
+  const command = require(path.join(__dirname, file));
   if ('data' in command && 'execute' in command) {
     client.commands.set(command.data.name, command);
   }
@@ -30,23 +38,21 @@ client.once('ready', async () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
   client.user.setActivity('/bal | /mybal | /ltcprice', { type: 'WATCHING' });
   
-  // Deploy commands globally (DMs + all servers)
   try {
     const commands = [];
     for (const file of commandFiles) {
-      const filePath = path.join(commandsPath, file);
-      const command = require(filePath);
+      const command = require(path.join(__dirname, file));
       if ('data' in command) {
         const cmdData = command.data.toJSON();
-        cmdData.default_member_permissions = null; // Everyone can use
-        cmdData.dm_permission = true; // Works in DMs
+        cmdData.default_member_permissions = null;
+        cmdData.dm_permission = true;
         commands.push(cmdData);
       }
     }
     
     const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
     await rest.put(Routes.applicationCommands(client.user.id), { body: commands });
-    console.log(`✅ ${commands.length} global commands deployed (DMs + all servers)`);
+    console.log(`✅ ${commands.length} commands deployed`);
   } catch (error) {
     console.error('❌ Error:', error);
   }
@@ -61,7 +67,7 @@ client.on('interactionCreate', async interaction => {
     await command.execute(interaction, client);
   } catch (error) {
     console.error(error);
-    const reply = { content: '❌ Error executing command!', ephemeral: true };
+    const reply = { content: '❌ Error!', ephemeral: true };
     if (interaction.replied || interaction.deferred) {
       await interaction.followUp(reply);
     } else {
