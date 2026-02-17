@@ -19,46 +19,48 @@ module.exports = {
       const data = await CryptoAPI.getLTCBalance(address);
       const priceData = await CryptoAPI.getLTCPrice();
       const ltcPrice = priceData.price_usd || priceData.market_price_usd || 70;
+      const priceChange = priceData.change_24h || 0;
       
-      const balance = data.balance / 100000000;
-      const unconfirmed = data.unconfirmed_balance / 100000000;
-      const totalReceived = data.total_received / 100000000;
-      const totalSent = data.total_sent / 100000000;
+      const balanceLTC = data.balance / 100000000;
+      const unconfirmedLTC = data.unconfirmed_balance / 100000000;
+      const totalReceivedLTC = data.total_received / 100000000;
       
-      const usdValue = (balance * ltcPrice).toFixed(2);
-      const receivedUsd = (totalReceived * ltcPrice).toFixed(2);
-      const sentUsd = (totalSent * ltcPrice).toFixed(2);
+      const balanceUSD = (balanceLTC * ltcPrice).toFixed(2);
+      const unconfirmedUSD = (unconfirmedLTC * ltcPrice).toFixed(2);
+      const receivedUSD = (totalReceivedLTC * ltcPrice).toFixed(2);
+      const change24h = (balanceLTC * ltcPrice * (priceChange / 100)).toFixed(2);
+      const changeSymbol = priceChange >= 0 ? '+' : '';
       
-      const netChange = totalReceived - totalSent;
-      const netChangeUsd = (netChange * ltcPrice).toFixed(2);
-      const changeSymbol = netChange >= 0 ? '+' : '';
-      
-      let sendersList = 'No recent transactions';
+      // Build transactions list
+      let txList = '';
       if (data.txrefs && data.txrefs.length > 0) {
-        const recentTxs = data.txrefs.slice(0, 3);
-        sendersList = recentTxs.map((tx, i) => 
-          `**${i+1}.** \`${tx.tx_hash.substring(0, 20)}...\` ${tx.value / 100000000} LTC`
-        ).join('\n');
+        const recentTxs = data.txrefs.slice(0, 5);
+        for (const tx of recentTxs) {
+          const isReceived = tx.tx_output_n >= 0;
+          const arrow = isReceived ? '🟢 from' : '🔴 to';
+          const otherAddr = isReceived ? (tx.inputs?.[0]?.addresses?.[0] || 'Unknown') : (tx.outputs?.[0]?.addresses?.[0] || 'Unknown');
+          const amountUSD = ((tx.value / 100000000) * ltcPrice).toFixed(2);
+          const shortAddr = otherAddr.substring(0, 20) + '...';
+          txList += `${arrow}\n${shortAddr}: $${amountUSD}\n`;
+        }
+      } else {
+        txList = 'No transactions found';
       }
 
       const embed = new EmbedBuilder()
-        .setColor('#00D4AA')
-        .setTitle('💎 LTC Balance Lookup')
-        .setThumbnail('https://cryptologos.cc/logos/litecoin-ltc-logo.png')
+        .setColor('#5865F2')
+        .setTitle('`L`')
+        .setDescription(`**${address}**`)
         .addFields(
-          { name: '• Address', value: `\`\`\`${address}\`\`\``, inline: false },
-          { name: '• Balance', value: `**${balance.toFixed(8)} LTC**\n*$${usdValue} USD*`, inline: true },
-          { name: '• Unconfirmed', value: `**${unconfirmed.toFixed(8)} LTC**`, inline: true },
-          { name: '• Total Received', value: `**${totalReceived.toFixed(8)} LTC**\n*$${receivedUsd} USD*`, inline: true },
-          { name: '• Total Sent', value: `**${totalSent.toFixed(8)} LTC**\n*$${sentUsd} USD*`, inline: true },
-          { name: '• Net Gain/Loss', value: `**${changeSymbol}${netChange.toFixed(8)} LTC**\n**${changeSymbol}$${netChangeUsd}**`, inline: false }
+          { name: '💵 Balance', value: `$${balanceUSD}`, inline: false },
+          { name: 'Unconfirmed', value: `$${unconfirmedUSD}`, inline: false },
+          { name: 'Total Received', value: `$${receivedUSD}`, inline: false },
+          { name: '📈 24h Change', value: `${changeSymbol}$${change24h}`, inline: false },
+          { name: '`L` Price', value: `$${ltcPrice.toFixed(2)}`, inline: false },
+          { name: 'Last 5 Transactions', value: txList || 'None', inline: false }
         )
         .setFooter({ text: `Requested by ${interaction.user.tag}` })
         .setTimestamp();
-
-      if (sendersList !== 'No recent transactions') {
-        embed.addFields({ name: '• Recent Activity', value: sendersList, inline: false });
-      }
 
       await interaction.editReply({ embeds: [embed] });
     } catch (error) {
