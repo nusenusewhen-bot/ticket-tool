@@ -1,17 +1,18 @@
 {
-  "name": "discord-rank-ladder-bot",
+  "name": "ion-bot",
   "version": "1.0.0",
-  "description": "Strict ladder ranking bot with cooldown",
+  "description": "LTC + Utility Bot",
   "main": "index.js",
-  "type": "module",
   "scripts": {
     "start": "node index.js"
   },
   "dependencies": {
-    "discord.js": "^14.16.3",
-    "better-sqlite3": "^11.5.0"
+    "discord.js": "^14.14.1",
+    "axios": "^1.6.2",
+    "dotenv": "^16.3.1",
+    "quick.db": "^9.1.7"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=18.0.0"
   }
 }
